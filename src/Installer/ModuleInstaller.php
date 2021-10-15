@@ -509,8 +509,14 @@ PHP;
         foreach ($config['packages'] as $name => $packagePath) {
             // $packagePath = $properties['path'];
 
+            $packagePath = str_replace(
+                DIRECTORY_SEPARATOR . DIRECTORY_SEPARATOR,
+                DIRECTORY_SEPARATOR,
+                $packagePath
+            );
+
             //
-            $data .= sprintf("        '%s' => '%s'", $name, 'modulesx');
+            $data .= sprintf("        '%s' => '%s'", $name, $packagePath);
         }
 
         if (! empty($data)) {
