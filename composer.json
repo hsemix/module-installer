@@ -10,7 +10,7 @@
             "role": "Developer"
         }
     ],
-    "require": {
+    "require-dev": {
         "composer/installers": "~1.0"
     },
     "autoload": {
