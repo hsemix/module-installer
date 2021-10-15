@@ -19,7 +19,7 @@
         }
     },
     "extra": {
-        "class": "Yuga\\Composer\\Installer\\PackageInstaller"
+        "class": "Yuga\\Composer\\Installer\\ModuleInstaller"
     },
     "minimum-stability": "dev"
 }
