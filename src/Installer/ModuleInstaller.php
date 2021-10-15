@@ -511,7 +511,7 @@ PHP;
             // $packagePath = $properties['path'];
 
             //
-            $data .= sprintf("        '%s' => '%s'", $name, 'module/' . $packagePath);
+            $data .= sprintf("        '%s' => '%s'", $name, str_replace('vendor', 'modules', $packagePath));
         }
 
         if (! empty($data)) {
