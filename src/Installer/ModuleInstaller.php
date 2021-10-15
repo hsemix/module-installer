@@ -12,7 +12,7 @@ use Composer\Installer\LibraryInstaller;
 use Composer\Repository\InstalledRepositoryInterface;
 
 
-class PackageInstaller extends LibraryInstaller
+class ModuleInstaller extends LibraryInstaller
 {
     /**
      * A flag to check usage - once
