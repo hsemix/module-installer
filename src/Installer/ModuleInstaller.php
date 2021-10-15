@@ -511,7 +511,7 @@ PHP;
             // $packagePath = $properties['path'];
 
             //
-            $data .= sprintf("        '%s' => '%s'", $name, 'modulez/' . $name);
+            $data .= sprintf("        '%s' => '%s'", $name, 'module/' . $packagePath);
         }
 
         if (! empty($data)) {
