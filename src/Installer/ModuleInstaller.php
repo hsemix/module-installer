@@ -20,6 +20,7 @@ class ModuleInstaller extends LibraryInstaller
      * @var bool
      */
     protected static $checkUsage = true;
+    protected $path = 'modulez';
 
 
     /**
@@ -437,7 +438,7 @@ PHP;
             $config = $return;
         }
 
-        if (! isset($config)) {
+        if (!isset($config)) {
             $this->io->write(
                 'ERROR - `vendor/yuga-modules.php` file is invalid. modules path configuration not updated.'
             );
@@ -445,7 +446,7 @@ PHP;
             return;
         }
 
-        if (! isset($config['packages'])) {
+        if (!isset($config['packages'])) {
             $config['packages'] = array();
         }
 
@@ -509,14 +510,8 @@ PHP;
         foreach ($config['packages'] as $name => $packagePath) {
             // $packagePath = $properties['path'];
 
-            $packagePath = str_replace(
-                DIRECTORY_SEPARATOR . DIRECTORY_SEPARATOR,
-                DIRECTORY_SEPARATOR,
-                $packagePath
-            );
-
             //
-            $data .= sprintf("        '%s' => '%s'", $name, $packagePath);
+            $data .= sprintf("        '%s' => '%s'", $name, 'modulez/' . $name);
         }
 
         if (! empty($data)) {
