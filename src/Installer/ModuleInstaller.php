@@ -507,7 +507,7 @@ PHP;
         $data = '';
 
         foreach ($config['packages'] as $name => $packagePath) {
-            $packagePath = $properties['path'];
+            // $packagePath = $properties['path'];
 
             //
             $data .= sprintf("        '%s' => '%s'", $name, $packagePath);
