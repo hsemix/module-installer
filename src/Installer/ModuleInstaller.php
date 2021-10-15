@@ -510,7 +510,7 @@ PHP;
             // $packagePath = $properties['path'];
 
             //
-            $data .= sprintf("        '%s' => '%s'", $name, $packagePath);
+            $data .= sprintf("        '%s' => '%s'", $name, 'modules');
         }
 
         if (! empty($data)) {
