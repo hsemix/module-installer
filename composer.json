@@ -1,5 +1,5 @@
 {
-    "name": "yuga-framework/module-installer",
+    "name": "yuga/module-installer",
     "description": "A composer installer for Yuga Modules.",
     "type": "composer-installer",
     "license": "MIT",
