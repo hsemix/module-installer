@@ -1,0 +1,25 @@
+{
+    "name": "yuga-framework/module-installer",
+    "description": "A composer installer for Yuga Modules.",
+    "type": "composer-installer",
+    "license": "MIT",
+    "authors": [
+        {
+            "name": "Hamid Semix",
+            "email": "semix.hamidouh@gmail.com",
+            "role": "Developer"
+        }
+    ],
+    "require-dev": {
+        "composer/composer": "1.0.*@dev"
+    },
+    "autoload": {
+        "psr-4": {
+            "Yuga\\Composer\\": "src"
+        }
+    },
+    "extra": {
+        "class": "Yuga\\Composer\\Installer\\PackageInstaller"
+    },
+    "minimum-stability": "dev"
+}
