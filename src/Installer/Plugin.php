@@ -10,7 +10,7 @@
 /**
  * @namespace
  */
-namespace Yuga\Composer\Installers;
+namespace Yuga\Composer\Installer;
 
 use Composer\Composer;
 use Composer\Script\Event;
