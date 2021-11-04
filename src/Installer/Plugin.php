@@ -13,425 +13,267 @@
 namespace Yuga\Composer\Installer;
 
 use Composer\Composer;
-use Composer\Script\Event;
-use Composer\IO\IOInterface;
-use Composer\Script\ScriptEvents;
-use Composer\Installer\PackageEvent;
-use Composer\Plugin\PluginInterface;
-use Symfony\Component\Finder\Finder;
-use Composer\Installer\PackageEvents;
-use Composer\Package\PackageInterface;
-use Symfony\Component\Filesystem\Filesystem;
 use Composer\EventDispatcher\EventSubscriberInterface;
-use Symfony\Component\Filesystem\Exception\IOException;
-use Composer\DependencyResolver\Operation\UpdateOperation;
+use Composer\IO\IOInterface;
+use Composer\Package\PackageInterface;
+use Composer\Plugin\PluginInterface;
+use Composer\Script\Event;
+use RuntimeException;
 
-/**
- * Class Plugin
- *
- * @package Yuga\Composer\Installer
- */
 class Plugin implements PluginInterface, EventSubscriberInterface
 {
-    public const PERMISSION_CODE = 0755;
-    public const REPEAT = 5;
-    public const DIRECTORIES = [
-        'modules',
-        'public',
-        'tests'
-    ];
-
     /**
-     * @var Installer
+     * @inheritDoc
      */
-    protected $installer;
-
-    /**
-     * @var string
-     */
-    protected $vendorPath;
-
-    /**
-     * @var string
-     */
-    protected $packagePath;
-
-    /**
-     * @var string
-     */
-    protected $environment;
-
-    /**
-     * @var Filesystem
-     */
-    protected $filesystem;
-
-    /**
-     * Create instance, define constants
-     */
-    public function __construct()
+    public function activate(Composer $composer, IOInterface $io)
     {
-        \defined('PATH_ROOT') ?: \define('PATH_ROOT', realpath($_SERVER['DOCUMENT_ROOT']));
-        \defined('DS') ?: \define('DS', DIRECTORY_SEPARATOR);
     }
 
     /**
-     * Called after the plugin is loaded
-     *
-     * It setup composer installer
-     *
-     * {@inheritDoc}
+     * @inheritDoc
      */
-    public function activate(Composer $composer, IOInterface $io): void
+    public function deactivate(Composer $composer, IOInterface $io)
     {
-        $this->installer = new Installer($io, $composer);
-        $this->vendorPath = $composer->getConfig()->get('vendor-dir');
-        $composer->getInstallationManager()->addInstaller($this->installer);
     }
 
     /**
-     * Registered events after the plugin is loaded
-     *
-     * {@inheritDoc}
+     * @inheritDoc
      */
-    public static function getSubscribedEvents(): array
+    public function uninstall(Composer $composer, IOInterface $io)
+    {
+    }
+
+    /**
+     * @inheritDoc
+     */
+    public static function getSubscribedEvents()
     {
         return [
-            // copy extra files from root composer.json
-            // do it only once after create project
-            ScriptEvents::POST_CREATE_PROJECT_CMD => 'copyProjectExtraFiles',
-            // copy module's files to working directory
-            PackageEvents::POST_PACKAGE_INSTALL => 'copyModuleFiles',
-            PackageEvents::POST_PACKAGE_UPDATE => 'copyModuleFiles',
-            // removed unchanged module's files
-            PackageEvents::PRE_PACKAGE_UPDATE => 'removeModuleFiles',
-            PackageEvents::PRE_PACKAGE_UNINSTALL => 'removeModuleFiles',
+            'post-autoload-dump' => 'postAutoloadDump',
         ];
     }
 
     /**
-     * extractPackage
+     * Called whenever composer (re)generates the autoloader.
      *
-     * @param PackageEvent $event
+     * Recreates Yuga's plugin path map, based on composer information
+     * and available app plugins.
      *
-     * @return PackageInterface
-     */
-    protected function extractPackage(PackageEvent $event): PackageInterface
-    {
-        if ($event->getOperation() instanceof UpdateOperation) {
-            return $event->getOperation()->getTargetPackage();
-        }
-        return $event->getOperation()->getPackage();
-    }
-
-    /**
-     * Copy extra files from compose.json of project
-     *
-     * @param Event $event
-     *
+     * @param \Composer\Script\Event $event Composer's event object.
      * @return void
-     * @throws \InvalidArgumentException
      */
-    public function copyProjectExtraFiles(Event $event): void
+    public function postAutoloadDump(Event $event)
     {
-        $extras = $event->getComposer()->getPackage()->getExtra();
-        if (array_key_exists('copy-files', $extras)) {
-            $this->installer->getIo()->write(
-                sprintf('  - Copied additional file(s)'),
-                true
-            );
-            $this->copyExtras($extras['copy-files']);
-        }
-    }
+        $composer = $event->getComposer();
+        $config = $composer->getConfig();
 
-    /**
-     * Hook which is called after install package
-     * It copies yuga module
-     *
-     * @param PackageEvent $event
-     *
-     * @throws \InvalidArgumentException
-     */
-    public function copyModuleFiles(PackageEvent $event): void
-    {
-        $package = $this->extractPackage($event);
-        $this->packagePath = $this->vendorPath . DS . $package->getName();
-        if ($package->getType() === 'yuga-module' && file_exists($this->packagePath)) {
-            if ($package->getExtra() && isset($package->getExtra()['copy-files'])) {
-                $this->copyExtras($package->getExtra()['copy-files']);
-            }
-            $this->copyModule();
-        }
-    }
+        $vendorDir = realpath($config->get('vendor-dir'));
 
-    /**
-     * Hook which is called before update package
-     * It checks yuga module
-     *
-     * @param PackageEvent $event
-     */
-    public function removeModuleFiles(PackageEvent $event): void
-    {
-        $package = $this->extractPackage($event);
-        $this->packagePath = $this->vendorPath . DS . $package->getName();
-        if ($package->getType() === 'yuga-module' && file_exists($this->packagePath)) {
-            if ($package->getExtra() && isset($package->getExtra()['copy-files'])) {
-                $this->removeExtras($package->getExtra()['copy-files']);
-            }
-            $this->removeModule();
-        }
-    }
-
-    /**
-     * Get Filesystem
-     *
-     * @return Filesystem
-     */
-    protected function getFilesystem(): Filesystem
-    {
-        if (!$this->filesystem) {
-            $this->filesystem = new Filesystem();
-        }
-        return $this->filesystem;
-    }
-
-    /**
-     * Copy Module files
-     *
-     * @return void
-     * @throws \InvalidArgumentException
-     */
-    protected function copyModule(): void
-    {
-        foreach (self::DIRECTORIES as $directory) {
-            $this->copy(
-                $this->packagePath . DS . $directory . DS,
-                PATH_ROOT . DS . $directory . DS
-            );
-        }
-
-        $this->installer->getIo()->write(
-            sprintf(
-                '  - Copied <comment>%s</comment> module to application',
-                basename($this->packagePath)
-            ),
-            true
-        );
-    }
-
-    /**
-     * copyExtras
-     *
-     * @param array $files
-     *
-     * @return void
-     * @throws \InvalidArgumentException
-     */
-    protected function copyExtras(array $files): void
-    {
-        foreach ($files as $source => $target) {
-            $this->copy(
-                $this->vendorPath . DS . $source,
-                PATH_ROOT . DS . $target
-            );
-        }
-    }
-
-    /**
-     * It recursively copies the files and directories
-     *
-     * @param string $source
-     * @param string $target
-     *
-     * @return void
-     * @throws \InvalidArgumentException
-     */
-    protected function copy(string $source, string $target): void
-    {
-        // skip, if not exists
-        if (!file_exists($source)) {
-            return;
-        }
-        // skip, if target exists
-        if (is_file($target) && !is_dir($target)) {
-            $this->installer->getIo()->write(
-                sprintf('  - File <comment>%s</comment> already exists', $target),
-                true,
-                IOInterface::VERBOSE
-            );
-            return;
-        }
-
-        // Check the renaming of file for direct moving (file-to-file)
-        $isRenameFile = substr($target, -1) !== '/' && !is_dir($source);
-
-        if (file_exists($target) && !is_dir($target) && !$isRenameFile) {
-            throw new \InvalidArgumentException('Destination directory is not a directory');
-        }
-
-        try {
-            if ($isRenameFile) {
-                $this->getFilesystem()->mkdir(\dirname($target));
-            } else {
-                $this->getFilesystem()->mkdir($target);
-            }
-        } catch (IOException $e) {
-            throw new \InvalidArgumentException(
-                sprintf('Could not create directory `%s`', $target)
-            );
-        }
-
-        if (false === file_exists($source)) {
-            throw new \InvalidArgumentException(
-                sprintf('Source directory or file `%s` does not exist', $source)
-            );
-        }
-
-        if (is_dir($source)) {
-            $finder = new Finder();
-            $finder->files()->in($source);
-
-            foreach ($finder as $file) {
-                try {
-                    $this->getFilesystem()->copy($file, $target . DS . $file->getRelativePathname());
-                } catch (IOException $e) {
-                    throw new \InvalidArgumentException(
-                        sprintf('Could not copy `%s`', $file->getBaseName())
-                    );
-                }
-            }
+        $packages = $composer->getRepositoryManager()->getLocalRepository()->getPackages();
+        $extra = $event->getComposer()->getPackage()->getExtra();
+        if (empty($extra['plugin-paths'])) {
+            $pluginDirs = [dirname($vendorDir) . DIRECTORY_SEPARATOR . 'plugins'];
         } else {
-            try {
-                if ($isRenameFile) {
-                    $this->getFilesystem()->copy($source, $target);
-                } else {
-                    $this->getFilesystem()->copy($source, $target . '/' . basename($source));
+            $pluginDirs = $extra['plugin-paths'];
+        }
+
+        $plugins = $this->findPlugins($packages, $pluginDirs, $vendorDir);
+
+        $configFile = $this->getConfigFilePath($vendorDir);
+        $this->writeConfigFile($configFile, $plugins);
+    }
+
+    /**
+     * Find all available plugins.
+     *
+     * Add all composer packages of type `yuga-module`, and all plugins located
+     * in the plugins directory to a plugin-name indexed array of paths.
+     *
+     * @param \Composer\Package\PackageInterface[] $packages Array of \Composer\Package\PackageInterface objects.
+     * @param array $pluginDirs The path to the plugins dir.
+     * @param string $vendorDir The path to the vendor dir.
+     * @return array Plugin name indexed paths to plugins.
+     */
+    public function findPlugins(
+        array $packages,
+        array $pluginDirs = ['plugins'],
+        $vendorDir = 'vendor'
+    ) {
+        $plugins = [];
+
+        foreach ($packages as $package) {
+            if ($package->getType() !== 'yuga-module') {
+                continue;
+            }
+
+            $ns = $this->getPrimaryNamespace($package);
+            $path = $vendorDir . DIRECTORY_SEPARATOR . $package->getPrettyName();
+            $plugins[$ns] = $path;
+        }
+
+        foreach ($pluginDirs as $path) {
+            $path = $this->getFullPath($path, $vendorDir);
+            if (is_dir($path)) {
+                $dir = new \DirectoryIterator($path);
+                foreach ($dir as $info) {
+                    if (!$info->isDir() || $info->isDot()) {
+                        continue;
+                    }
+
+                    $name = $info->getFilename();
+                    if ($name[0] === '.') {
+                        continue;
+                    }
+
+                    $plugins[$name] = $path . DIRECTORY_SEPARATOR . $name;
                 }
-            } catch (IOException $e) {
-                throw new \InvalidArgumentException(sprintf('Could not copy `%s`', $source));
             }
         }
 
-        $this->installer->getIo()->write(
-            sprintf('  - Copied file(s) from <comment>%s</comment> to <comment>%s</comment>', $source, $target),
-            true,
-            IOInterface::VERBOSE
-        );
+        ksort($plugins);
+
+        return $plugins;
     }
 
     /**
-     * It recursively removes the files and empty directories
-     * @return void
+     * Turns relative paths in full paths.
+     *
+     * @param string $path Path.
+     * @param string $vendorDir The path to the vendor dir.
+     * @return string
      */
-    protected function removeModule(): void
+    public function getFullPath($path, $vendorDir)
     {
-        foreach (self::DIRECTORIES as $directory) {
-            $this->remove($directory);
+        if (preg_match('{^(?:/|[a-z]:|[a-z0-9.]+://)}i', $path)) {
+            return rtrim($path, '/');
         }
 
-        $this->installer->getIo()->write(
-            sprintf(
-                '  - Removed <comment>%s</comment> module from application',
-                basename($this->packagePath)
-            ),
-            true
-        );
+        if (substr($path, 0, 2) === './') {
+            $path = substr($path, 2);
+        }
+
+        return rtrim(dirname($vendorDir) . DIRECTORY_SEPARATOR . $path);
     }
 
     /**
-     * removeExtras
+     * Rewrite the config file with a complete list of plugins.
      *
-     * @param array $files
-     *
+     * @param string $configFile The path to the config file.
+     * @param array $plugins Array of plugins.
+     * @param string|null $root The root directory. Defaults to a value generated from `$configFile`.
      * @return void
      */
-    protected function removeExtras(array $files): void
+    public function writeConfigFile($configFile, array $plugins, $root = null)
     {
-        foreach ($files as $source => $target) {
-            $this->installer->getIo()->write(
-                sprintf('  - Skipped additional file(s) <comment>%s</comment>', $target),
-                true
+        $root = $root ?: dirname(dirname($configFile));
+
+        $data = '';
+        foreach ($plugins as $name => $pluginPath) {
+            // Normalize to *nix paths.
+            $pluginPath = str_replace('\\', '/', $pluginPath);
+            $pluginPath .= '/';
+
+            $pluginPath = str_replace(
+                DIRECTORY_SEPARATOR . DIRECTORY_SEPARATOR,
+                DIRECTORY_SEPARATOR,
+                $pluginPath
+            );
+
+            // Namespaced plugins should use /
+            $name = str_replace('\\', '/', $name);
+
+            $data .= sprintf("        '%s' => '%s',\n", $name, $pluginPath);
+        }
+
+        $contents = <<<'PHP'
+<?php
+$baseDir = dirname(dirname(__file__));
+return [
+    'plugins' => [
+%s    ],
+];
+PHP;
+        $contents = sprintf($contents, $data);
+
+        // Gross hacks to work around composer smashing `__FILE__` in this
+        // PHP file when it runs the code through eval()
+        $uppercase = function ($matches) {
+            return strtoupper($matches[0]);
+        };
+        $contents = preg_replace_callback('/__file__/', $uppercase, $contents);
+
+        $root = str_replace(
+            DIRECTORY_SEPARATOR . DIRECTORY_SEPARATOR,
+            DIRECTORY_SEPARATOR,
+            $root
+        );
+
+        // Normalize to *nix paths.
+        $root = str_replace('\\', '/', $root);
+        $contents = str_replace('\'' . $root, '$baseDir . \'', $contents);
+
+        file_put_contents($configFile, $contents);
+    }
+
+    /**
+     * Path to the plugin config file.
+     *
+     * @param string $vendorDir Path to composer-vendor dir.
+     * @return string Absolute file path.
+     */
+    public function getConfigFilePath($vendorDir)
+    {
+        return $vendorDir . DIRECTORY_SEPARATOR . 'yuga-modules.php';
+    }
+
+    /**
+     * Get the primary namespace for a plugin package.
+     *
+     * @param \Composer\Package\PackageInterface $package Composer's package object.
+     * @return string The package's primary namespace.
+     * @throws \RuntimeException When the package's primary namespace cannot be determined.
+     */
+    public function getPrimaryNamespace(PackageInterface $package)
+    {
+        $primaryNs = null;
+        $autoLoad = $package->getAutoload();
+        foreach ($autoLoad as $type => $pathMap) {
+            if ($type !== 'psr-4') {
+                continue;
+            }
+            $count = count($pathMap);
+
+            if ($count === 1) {
+                $primaryNs = key($pathMap);
+                break;
+            }
+
+            $matches = preg_grep('#^(\./)?src/?$#', $pathMap);
+            if ($matches) {
+                $primaryNs = key($matches);
+                break;
+            }
+
+            foreach (['', '.'] as $path) {
+                $key = array_search($path, $pathMap, true);
+                if ($key !== false) {
+                    $primaryNs = $key;
+                }
+            }
+            break;
+        }
+
+        if (!$primaryNs) {
+            throw new RuntimeException(
+                sprintf(
+                    'Unable to get primary namespace for package %s.' .
+                    "\nEnsure you have added proper 'autoload' section to your plugin's config" .
+                    ' as stated in README on https://github.com/hsemix/module-installer',
+                    $package->getName()
+                )
             );
         }
-    }
 
-    /**
-     * It recursively removes the files and directories
-     * @param $directory
-     * @return void
-     */
-    protected function remove($directory): void
-    {
-        $sourcePath = $this->packagePath . DS . $directory;
-
-        if (!is_dir($sourcePath)) {
-            return;
-        }
-        foreach (
-            $iterator = new \RecursiveIteratorIterator(
-                new \RecursiveDirectoryIterator(
-                    $sourcePath,
-                    \RecursiveDirectoryIterator::SKIP_DOTS
-                ),
-                \RecursiveIteratorIterator::CHILD_FIRST
-            ) as $item
-        ) {
-            // path to copied file
-            $current = PATH_ROOT . DS . $directory . DS . $iterator->getSubPathName();
-
-            // remove empty directories
-            if (is_dir($current)) {
-                if (\count(scandir($current, SCANDIR_SORT_ASCENDING)) === 2) {
-                    rmdir($current);
-                    $this->installer->getIo()->write(
-                        "  - Removed directory `{$iterator->getSubPathName()}`",
-                        true,
-                        IOInterface::VERBOSE
-                    );
-                } else {
-                    $this->installer->getIo()->write(
-                        sprintf(
-                            '  - <comment>Skipped directory `%s`</comment>',
-                            $directory . DS . $iterator->getSubPathName()
-                        ),
-                        true,
-                        IOInterface::VERBOSE
-                    );
-                }
-                continue;
-            }
-
-            // skip already removed files
-            if (!is_file($current)) {
-                continue;
-            }
-
-            if (md5_file($item) === md5_file($current)) {
-                // remove file
-                unlink($current);
-                $this->installer->getIo()->write(
-                    "  - Removed file `{$iterator->getSubPathName()}`",
-                    true,
-                    IOInterface::VERBOSE
-                );
-            } else {
-                // or skip changed files
-                $this->installer->getIo()->write(
-                    "  - <comment>File `{$iterator->getSubPathName()}` has changed</comment>",
-                    true,
-                    IOInterface::VERBOSE
-                );
-            }
-        }
-    }
-
-    public function deactivate(Composer $composer, IOInterface $io)
-    {
-        // TODO: Implement deactivate() method.
-    }
-
-    public function uninstall(Composer $composer, IOInterface $io)
-    {
-        // TODO: Implement uninstall() method.
+        return trim((string)$primaryNs, '\\');
     }
 }
